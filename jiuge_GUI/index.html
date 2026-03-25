@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>木曦基准测试 GUI</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- 左侧边栏 -->
+    <div id="sidebar">
+      <div id="logo">
+        <span class="logo-title">木曦基准测试</span>
+        <span class="logo-sub">Jiuge Benchmark GUI</span>
+      </div>
+
+      <div class="section-label">测试项目</div>
+      <div id="test-list">
+        <button class="test-btn" data-script="test_single.js" data-name="连接测试">
+          <span class="btn-icon">⚡</span>
+          <span class="btn-text">连接测试</span>
+          <span class="btn-desc">验证 API 连通性</span>
+        </button>
+        <button class="test-btn" data-script="test_gsm8k.js" data-name="GSM8K 数学">
+          <span class="btn-icon">🔢</span>
+          <span class="btn-text">GSM8K 数学</span>
+          <span class="btn-desc">小学数学推理 100题</span>
+        </button>
+        <button class="test-btn" data-script="test_drop.js" data-name="DROP 阅读理解">
+          <span class="btn-icon">📖</span>
+          <span class="btn-text">DROP 阅读理解</span>
+          <span class="btn-desc">数值推理阅读 100题</span>
+        </button>
+        <button class="test-btn" data-script="test_triviaqa.js" data-name="TriviaQA">
+          <span class="btn-icon">🧠</span>
+          <span class="btn-text">TriviaQA</span>
+          <span class="btn-desc">知识问答（全量）</span>
+        </button>
+        <button class="test-btn" data-script="test_triviaqa_v1.js" data-name="TriviaQA v1">
+          <span class="btn-icon">🧠</span>
+          <span class="btn-text">TriviaQA v1</span>
+          <span class="btn-desc">知识问答 100题（精简）</span>
+        </button>
+        <button class="test-btn" data-script="test_mmlu.js" data-name="MMLU 综合">
+          <span class="btn-icon">🎓</span>
+          <span class="btn-text">MMLU 综合</span>
+          <span class="btn-desc">57学科多任务理解</span>
+        </button>
+      </div>
+
+      <div class="section-label">操作</div>
+      <div id="actions">
+        <button id="stop-btn" disabled>■ 停止</button>
+        <button id="clear-btn">⌫ 清空输出</button>
+        <button id="results-btn">📁 查看结果</button>
+      </div>
+
+      <div id="info-box">
+        <div class="info-row"><span class="info-key">API</span><span class="info-val">localhost:8000</span></div>
+        <div class="info-row"><span class="info-key">模型</span><span class="info-val">9g_8b_thinking</span></div>
+      </div>
+    </div>
+
+    <!-- 右侧主区域 -->
+    <div id="main">
+      <div id="topbar">
+        <div id="status-area">
+          <span id="status-dot" class="dot idle"></span>
+          <span id="status-text">就绪</span>
+        </div>
+        <div id="stats-area">
+          <span class="stat-item" id="stat-progress" style="display:none">
+            进度: <strong id="val-progress">-</strong>
+          </span>
+          <span class="stat-item" id="stat-acc" style="display:none">
+            准确率: <strong id="val-acc">-</strong>
+          </span>
+          <span class="stat-item" id="stat-time" style="display:none">
+            均耗时: <strong id="val-time">-</strong>
+          </span>
+        </div>
+      </div>
+
+      <div id="output-wrap">
+        <div id="output"></div>
+      </div>
+    </div>
+
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>

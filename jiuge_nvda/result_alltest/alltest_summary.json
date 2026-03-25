@@ -1,0 +1,114 @@
+{
+  "DROP_V1": {
+    "dataset": "DROP_V1",
+    "status": "interrupted",
+    "startedAt": "2026-03-24T16:46:02.488Z",
+    "updatedAt": "2026-03-24T16:46:08.469Z",
+    "total": 77400,
+    "processed": 9,
+    "correct": 1,
+    "accuracy": 11.11,
+    "avgInferenceTimeMs": 186.44,
+    "errors": 0,
+    "emptyResponses": 0,
+    "gpu": {
+      "gpuUtilization": 22,
+      "memoryTotalMB": 8188,
+      "memoryUsedMB": 2123,
+      "memoryFreeMB": 5835
+    },
+    "avgGpu": {
+      "avgGpuUtilization": 17.67,
+      "avgMemoryUsedMB": 2126.92,
+      "avgMemoryFreeMB": 5831.08,
+      "avgMemoryTotalMB": 8188,
+      "maxGpuUtilization": 35,
+      "samples": 12,
+      "mode": "continuous"
+    }
+  },
+  "GSM8K_V1": {
+    "dataset": "GSM8K_V1",
+    "status": "interrupted",
+    "startedAt": "2026-03-24T16:45:39.232Z",
+    "updatedAt": "2026-03-24T16:45:51.239Z",
+    "total": 1319,
+    "processed": 5,
+    "correct": 2,
+    "accuracy": 40,
+    "avgInferenceTimeMs": 1723.4,
+    "errors": 0,
+    "emptyResponses": 0,
+    "gpu": {
+      "gpuUtilization": 39,
+      "memoryTotalMB": 8188,
+      "memoryUsedMB": 2127,
+      "memoryFreeMB": 5831
+    },
+    "avgGpu": {
+      "avgGpuUtilization": 19.38,
+      "avgMemoryUsedMB": 2145.71,
+      "avgMemoryFreeMB": 5812.29,
+      "avgMemoryTotalMB": 8188,
+      "maxGpuUtilization": 51,
+      "samples": 24,
+      "mode": "continuous"
+    }
+  },
+  "TriviaQA_V1": {
+    "dataset": "TriviaQA_V1",
+    "status": "interrupted",
+    "startedAt": "2026-03-24T16:45:52.874Z",
+    "updatedAt": "2026-03-24T16:46:00.328Z",
+    "total": 407,
+    "processed": 11,
+    "correct": 5,
+    "accuracy": 45.45,
+    "avgInferenceTimeMs": 206.36,
+    "errors": 0,
+    "emptyResponses": 0,
+    "gpu": {
+      "gpuUtilization": 39,
+      "memoryTotalMB": 8188,
+      "memoryUsedMB": 2123,
+      "memoryFreeMB": 5835
+    },
+    "avgGpu": {
+      "avgGpuUtilization": 30.27,
+      "avgMemoryUsedMB": 2126.4,
+      "avgMemoryFreeMB": 5831.6,
+      "avgMemoryTotalMB": 8188,
+      "maxGpuUtilization": 45,
+      "samples": 15,
+      "mode": "continuous"
+    }
+  },
+  "MMLU_V1": {
+    "dataset": "MMLU_V1",
+    "status": "interrupted",
+    "startedAt": "2026-03-24T16:46:11.035Z",
+    "updatedAt": "2026-03-24T16:47:15.796Z",
+    "total": 14042,
+    "processed": 107,
+    "correct": 31,
+    "accuracy": 28.97,
+    "avgInferenceTimeMs": 123.6,
+    "errors": 0,
+    "emptyResponses": 0,
+    "gpu": {
+      "gpuUtilization": 0,
+      "memoryTotalMB": 8188,
+      "memoryUsedMB": 1806,
+      "memoryFreeMB": 6152
+    },
+    "avgGpu": {
+      "avgGpuUtilization": 21.91,
+      "avgMemoryUsedMB": 1819.03,
+      "avgMemoryFreeMB": 6138.97,
+      "avgMemoryTotalMB": 8188,
+      "maxGpuUtilization": 49,
+      "samples": 128,
+      "mode": "continuous"
+    }
+  }
+}

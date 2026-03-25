@@ -1,0 +1,207 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Consolas', 'Microsoft YaHei', monospace;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  height: 100vh;
+  overflow: hidden;
+  user-select: none;
+}
+
+#app {
+  display: flex;
+  height: 100vh;
+}
+
+/* ── 侧边栏 ── */
+#sidebar {
+  width: 230px;
+  min-width: 230px;
+  background: #252526;
+  border-right: 1px solid #3c3c3c;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow-y: auto;
+}
+
+#logo {
+  padding: 18px 16px 14px;
+  border-bottom: 1px solid #3c3c3c;
+}
+.logo-title {
+  display: block;
+  font-size: 15px;
+  font-weight: bold;
+  color: #4fc3f7;
+  letter-spacing: 1px;
+}
+.logo-sub {
+  display: block;
+  font-size: 10px;
+  color: #666;
+  margin-top: 2px;
+}
+
+.section-label {
+  font-size: 10px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 12px 16px 6px;
+}
+
+/* 测试按钮 */
+#test-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 8px;
+}
+
+.test-btn {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  color: #d4d4d4;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+}
+.test-btn:hover { background: #2d2d2d; border-color: #3c3c3c; }
+.test-btn.active { background: #094771; border-color: #007acc; }
+.test-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-icon {
+  grid-row: 1 / 3;
+  font-size: 16px;
+  text-align: center;
+}
+.btn-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e0e0e0;
+  line-height: 1.3;
+}
+.btn-desc {
+  font-size: 10px;
+  color: #888;
+  line-height: 1.2;
+}
+
+/* 操作按钮 */
+#actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 8px;
+}
+#actions button {
+  background: #2d2d2d;
+  border: 1px solid #3c3c3c;
+  border-radius: 5px;
+  color: #d4d4d4;
+  padding: 7px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+#actions button:hover { background: #3c3c3c; }
+#stop-btn:not(:disabled):hover { background: #5a1d1d; border-color: #f44; color: #f88; }
+#stop-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* 信息框 */
+#info-box {
+  margin: 12px 8px 8px;
+  background: #1a1a1a;
+  border: 1px solid #3c3c3c;
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  padding: 2px 0;
+}
+.info-key { color: #888; }
+.info-val { color: #9cdcfe; font-family: monospace; }
+
+/* ── 主区域 ── */
+#main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#topbar {
+  height: 38px;
+  background: #2d2d2d;
+  border-bottom: 1px solid #3c3c3c;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  flex-shrink: 0;
+}
+
+#status-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot.idle    { background: #555; }
+.dot.running { background: #4caf50; box-shadow: 0 0 6px #4caf50; animation: pulse 1.2s infinite; }
+.dot.done    { background: #2196f3; }
+.dot.error   { background: #f44336; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+#status-text { font-size: 13px; color: #ccc; }
+
+#stats-area { display: flex; gap: 16px; }
+.stat-item { font-size: 12px; color: #888; }
+.stat-item strong { color: #4fc3f7; }
+
+/* 输出区域 */
+#output-wrap {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+  background: #1e1e1e;
+}
+#output-wrap::-webkit-scrollbar { width: 6px; }
+#output-wrap::-webkit-scrollbar-track { background: #1e1e1e; }
+#output-wrap::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+
+#output {
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+}
+
+.line { min-height: 1.6em; }
+.line.err { color: #f48771; }
+.line.sep { color: #4fc3f7; font-weight: bold; }
+.line.ok  { color: #4ec9b0; }
+.line.fail { color: #f44336; }

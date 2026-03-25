@@ -1,0 +1,12 @@
+{
+  "name": "jiuge-gui",
+  "version": "1.0.0",
+  "description": "木曦基准测试图形界面",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "electron": "^28.0.0"
+  }
+}

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>Windows 3090端基准测试 GUI</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- 左侧边栏 -->
+    <div id="sidebar">
+      <div id="logo">
+        <span class="logo-title">Windows 3090端基准测试</span>
+        <span class="logo-sub">Test Benchmark GUI</span>
+      </div>
+
+      <div class="section-label">数学推理</div>
+      <div class="test-group">
+        <button class="test-btn" data-script="test_GSM8k.js" data-name="GSM8K 数学">
+          <span class="btn-icon">🔢</span>
+          <span class="btn-text">GSM8K 数学</span>
+          <span class="btn-desc">小学数学推理</span>
+        </button>
+      </div>
+
+      <div class="section-label">DROP 阅读理解</div>
+      <div class="test-group">
+        <button class="test-btn" data-script="test_DROP.js" data-name="DROP 基础版">
+          <span class="btn-icon">📖</span>
+          <span class="btn-text">DROP 基础版</span>
+          <span class="btn-desc">段落数值推理</span>
+        </button>
+        <button class="test-btn" data-script="test_DROP300.js" data-name="DROP 300 类型感知">
+          <span class="btn-icon">📖</span>
+          <span class="btn-text">DROP 300 类型感知</span>
+          <span class="btn-desc">number/span 分类处理</span>
+        </button>
+        <button class="test-btn" data-script="test_DROP300_NUM.js" data-name="DROP 300 数值采样">
+          <span class="btn-icon">📖</span>
+          <span class="btn-text">DROP 300 数值采样</span>
+          <span class="btn-desc">随机采样1000题严格数值匹配</span>
+        </button>
+        <button class="test-btn" data-script="validate_drop_fixed.js" data-name="DROP 验证增强版">
+          <span class="btn-icon">✅</span>
+          <span class="btn-text">DROP 验证增强版</span>
+          <span class="btn-desc">文本归一化+词转数字</span>
+        </button>
+      </div>
+
+      <div class="section-label">MMLU 综合</div>
+      <div class="test-group">
+        <button class="test-btn" data-script="test_MMLU.js" data-name="MMLU 57学科">
+          <span class="btn-icon">🎓</span>
+          <span class="btn-text">MMLU 57学科</span>
+          <span class="btn-desc">多任务语言理解</span>
+        </button>
+        <button class="test-btn" data-script="test_MMLU_invaild.js" data-name="MMLU 无效答案版">
+          <span class="btn-icon">🎓</span>
+          <span class="btn-text">MMLU 无效答案版</span>
+          <span class="btn-desc">含无效回答统计</span>
+        </button>
+      </div>
+
+      <div class="section-label">知识问答</div>
+      <div class="test-group">
+        <button class="test-btn" data-script="test_TriviaQA.js" data-name="TriviaQA">
+          <span class="btn-icon">🧠</span>
+          <span class="btn-text">TriviaQA</span>
+          <span class="btn-desc">开放域知识问答</span>
+        </button>
+      </div>
+
+      <div class="section-label">九格测试 (OpenAI API)</div>
+      <div class="test-group">
+        <button class="test-btn" data-script="test_jiuge_local.js" data-name="九格 Local">
+          <span class="btn-icon">⚙️</span>
+          <span class="btn-text">九格 Local</span>
+          <span class="btn-desc">localhost:8000 · 含重试</span>
+        </button>
+        <button class="test-btn" data-script="test_jiuge_final.js" data-name="九格 Final">
+          <span class="btn-icon">⚙️</span>
+          <span class="btn-text">九格 Final</span>
+          <span class="btn-desc">localhost:8000 · 正式版</span>
+        </button>
+      </div>
+
+      <div class="section-label">操作</div>
+      <div id="actions">
+        <button id="stop-btn" disabled>■ 停止</button>
+        <button id="clear-btn">⌫ 清空输出</button>
+        <button id="results-btn">📁 查看结果</button>
+      </div>
+
+      <div id="info-box">
+        <div class="info-row"><span class="info-key">llama.cpp</span><span class="info-val">127.0.0.1:1145</span></div>
+        <div class="info-row"><span class="info-key">九格 API</span><span class="info-val">localhost:8000</span></div>
+      </div>
+    </div>
+
+    <!-- 右侧主区域 -->
+    <div id="main">
+      <div id="topbar">
+        <div id="status-area">
+          <span id="status-dot" class="dot idle"></span>
+          <span id="status-text">就绪</span>
+        </div>
+        <div id="stats-area">
+          <span class="stat-item" id="stat-progress" style="display:none">
+            进度: <strong id="val-progress">-</strong>
+          </span>
+          <span class="stat-item" id="stat-acc" style="display:none">
+            准确率: <strong id="val-acc">-</strong>
+          </span>
+          <span class="stat-item" id="stat-time" style="display:none">
+            均耗时: <strong id="val-time">-</strong>
+          </span>
+        </div>
+      </div>
+
+      <div id="output-wrap">
+        <div id="output"></div>
+      </div>
+    </div>
+
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>
