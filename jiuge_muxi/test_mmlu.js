@@ -3,7 +3,7 @@ const path = require("path");
 
 // 测试运行配置
 const CONFIG = {
-    api_url: "http://localhost:8000/v1/chat/completions",
+    api_url: "http://172.22.162.17:8000/chat/completions",
     model_name: "9g_8b_thinking",
 // 单次请求最大输出长度
     max_tokens: 2048, 

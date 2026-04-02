@@ -1,65 +1,44 @@
-﻿// 导入文件系统模块
 const fs = require("fs");
 const path = require("path");
+const readline = require("readline");
 
-// 测试运行配置
 const CONFIG = {
-    api_url: "http://localhost:9500/chat",
-    model_name: "9g_8b_thinking", // 待评测模型名称
-// 单次请求最大输出长度
-    max_tokens: 4096, 
-// 样本间冷却时间（毫秒）
-    cooldown_ms: 3000, 
-// 单次请求超时（毫秒）
-    timeout_ms: 600000,
-// 数据集文件路径
+    api_url: process.env.INFINILM_API_URL || "http://127.0.0.1:9500/chat/completions",
+    model_name: process.env.INFINILM_MODEL || "9G-8B",
+    max_tokens: Number(process.env.GSM8K_MAX_TOKENS || 512),
+    recovery_max_tokens: Number(process.env.GSM8K_RECOVERY_MAX_TOKENS || 96),
+    cooldown_ms: Number(process.env.GSM8K_COOLDOWN_MS || 500),
+    timeout_ms: Number(process.env.GSM8K_TIMEOUT_MS || 600000),
+    limit: Number(process.env.GSM8K_LIMIT || 100),
     data_file: "../data_sets/GSM8k/test.jsonl"
 };
-// ================================================
 
-// 封装带超时控制的请求
 async function fetchWithTimeout(resource, options = {}) {
-    const { timeout = 8000 } = options;
+    const { timeout = 8000, ...restOptions } = options;
     const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), timeout);
+    const timer = setTimeout(() => controller.abort(), timeout);
+
     try {
-        const response = await fetch(resource, { ...options, signal: controller.signal });
-        clearTimeout(id);
-        return response;
-    } catch (error) {
-        clearTimeout(id);
-        throw error;
+        return await fetch(resource, { ...restOptions, signal: controller.signal });
+    } finally {
+        clearTimeout(timer);
     }
 }
 
-// 调用模型并获取回答
-async function askStream(question) {
-    const systemPrompt = "You are a helpful math expert.";
-    
-// 用户提示词
-// 用户提示词
-// 用户提示词
-    const userPrompt = `
-Question: ${question}
+function parseNonStreamResponse(json) {
+    return json?.choices?.[0]?.message?.content
+        || json?.choices?.[0]?.text
+        || json?.response
+        || json?.content
+        || "";
+}
 
-Instructions:
-1. Think step-by-step to solve the problem, but keep your thinking process VERY BRIEF (limit to essential steps).
-2. Calculate the final numerical result.
-3. Start your final answer strictly with "Answer:".
-
-Example:
-... brief calculation steps ...
-Answer: 42
-`.trim();
-
+async function requestModel(messages, maxTokens) {
     const payload = {
         model: CONFIG.model_name,
-        messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt }
-        ],
-        max_tokens: CONFIG.max_tokens,
-        temperature: 0.1, // 采样温度
+        messages,
+        max_tokens: maxTokens,
+        temperature: 0.1,
         stream: true
     };
 
@@ -74,7 +53,20 @@ Answer: 42
             timeout: CONFIG.timeout_ms
         });
 
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}${errText ? ` - ${errText}` : ""}`);
+        }
+
+        const contentType = response.headers.get("content-type") || "";
+        if (!response.body || !contentType.toLowerCase().includes("text/event-stream")) {
+            const json = await response.json();
+            return {
+                content: parseNonStreamResponse(json),
+                inferenceTime: (Date.now() - t0) / 1000,
+                error: false
+            };
+        }
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder("utf-8");
@@ -86,177 +78,279 @@ Answer: 42
 
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split("\n");
-            buffer = lines.pop(); 
+            buffer = lines.pop() || "";
 
             for (const line of lines) {
                 const trimmed = line.trim();
-                if (trimmed.startsWith("data: ")) {
-                    const jsonStr = trimmed.slice(6);
-                    if (jsonStr === "[DONE]") continue;
-                    try {
-                        const json = JSON.parse(jsonStr);
-                        const token = json.choices[0].delta?.content || json.choices[0].text || "";
-                        if (token) {
-                            fullContent += token;
-// 分支条件处理
-                            if (fullContent.length % 50 === 0) {
-                                const preview = fullContent.slice(-40).replace(/\n/g, " ");
- process.stdout.write(`\r ? ... [${fullContent.length} ...${preview} `);
-                            }
-                        }
-                    } catch (e) { }
+                if (!trimmed.startsWith("data: ")) continue;
+
+                const jsonStr = trimmed.slice(6).trim();
+                if (!jsonStr || jsonStr === "[DONE]") continue;
+
+                try {
+                    const json = JSON.parse(jsonStr);
+                    const token = json?.choices?.[0]?.delta?.content || json?.choices?.[0]?.text || "";
+                    if (token) fullContent += token;
+                } catch (_) {
+                    // Ignore malformed SSE fragments.
                 }
             }
         }
-    } catch (err) {
- process.stdout.write(`\n ? : ${err.message}\n`);
-        return { content: "", inferenceTime: 0, error: true };
-    }
 
-    const t1 = Date.now();
-    return { content: fullContent, inferenceTime: (t1 - t0) / 1000, error: false };
+        const tail = buffer.trim();
+        if (tail.startsWith("data: ")) {
+            const jsonStr = tail.slice(6).trim();
+            if (jsonStr && jsonStr !== "[DONE]") {
+                try {
+                    const json = JSON.parse(jsonStr);
+                    const token = json?.choices?.[0]?.delta?.content || json?.choices?.[0]?.text || "";
+                    if (token) fullContent += token;
+                } catch (_) {
+                    // Ignore trailing malformed chunk.
+                }
+            }
+        }
+
+        return { content: fullContent, inferenceTime: (Date.now() - t0) / 1000, error: false };
+    } catch (err) {
+        const errorMsg = err.name === "AbortError"
+            ? `Request timed out after ${(CONFIG.timeout_ms / 1000).toFixed(0)}s: ${CONFIG.api_url}`
+            : err.message;
+        return { content: "", inferenceTime: 0, error: true, errorMsg };
+    }
 }
 
-// 从文本中提取标准答案
+function buildPrompt(question) {
+    return `Question:
+${question}
+
+Instructions:
+1. Solve the math word problem.
+2. Keep the reasoning brief.
+3. Output the final result strictly as "Answer: <number>".
+4. Use digits only for the final number. Do not add units or words.
+
+Example:
+Answer: 42`;
+}
+
+function buildRecoveryPrompt(question, partialOutput) {
+    return `Question:
+${question}
+
+The previous response did not end with a clear final number.
+
+Previous response:
+${partialOutput || "(empty)"}
+
+Instructions:
+1. Do not repeat the reasoning.
+2. Output exactly one line.
+3. Start strictly with "Answer:".
+4. Put only the final number after "Answer:".
+
+Example:
+Answer: 42`;
+}
+
+async function askQuestion(question) {
+    return requestModel([
+        { role: "system", content: "You solve math word problems and return one final numeric answer. Do not reveal chain-of-thought." },
+        { role: "user", content: buildPrompt(question) }
+    ], CONFIG.max_tokens);
+}
+
+async function recoverAnswer(question, partialOutput) {
+    return requestModel([
+        { role: "system", content: "You solve math word problems and return one final numeric answer. Do not reveal chain-of-thought." },
+        { role: "user", content: buildRecoveryPrompt(question, partialOutput) },
+        { role: "assistant", content: "Answer:" }
+    ], CONFIG.recovery_max_tokens);
+}
+
 function extractExpect(answerStr) {
     if (!answerStr) return NaN;
-// 处理extractExpect相关逻辑
-    const match = answerStr.match(/####\s*(-?[\d,.]+)/);
-    if (match) {
-// 返回结果
-        return parseFloat(match[1].replace(/,/g, ""));
-    }
-    return NaN;
+
+    const match = String(answerStr).match(/####\s*(-?[\d,.]+)/);
+    if (!match) return NaN;
+
+    return Number.parseFloat(match[1].replace(/,/g, ""));
 }
 
-// 从文本中提取标准答案
+function sanitizeOutput(rawOutput) {
+    return String(rawOutput || "")
+        .replace(/<\|im_end\|>/gi, " ")
+        .replace(/<\|endoftext\|>/gi, " ")
+        .replace(/<\|assistant\|>/gi, " ")
+        .replace(/<\|user\|>/gi, " ")
+        .replace(/<think>/gi, " ")
+        .replace(/<\/think>/gi, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
 function extractAnswer(rawOutput) {
-    if (!rawOutput) return NaN;
-    
-// 处理extractAnswer相关逻辑
-    let cleanText = rawOutput;
-    const thinkIndex = rawOutput.lastIndexOf("</think>");
-    if (thinkIndex !== -1) {
-        cleanText = rawOutput.slice(thinkIndex + 8).trim();
-    }
+    const cleanText = sanitizeOutput(rawOutput);
+    if (!cleanText) return NaN;
 
-// 处理extractAnswer相关逻辑
-// 处理extractAnswer相关逻辑
-    const match = cleanText.match(/Answer:\s*[^\d-]*(-?[\d,.]+)/i);
-    if (match) {
-        return parseFloat(match[1].replace(/,/g, ""));
-    }
+    const patterns = [
+        /Answer:\s*[^\d-]*(-?[\d,.]+)/i,
+        /(?:final answer|the answer is)\s*[: ]\s*(-?[\d,.]+)/i,
+        /\\boxed\{(-?[\d,.]+)\}/i
+    ];
 
-// 处理extractAnswer相关逻辑
-    const boxedMatch = cleanText.match(/\\boxed\{(-?[\d,.]+)\}/);
-    if (boxedMatch) {
-        return parseFloat(boxedMatch[1].replace(/,/g, ""));
-    }
-
-// 处理extractAnswer相关逻辑
-    const allNumbers = cleanText.match(/-?[\d,.]+/g);
-    if (allNumbers && allNumbers.length > 0) {
-// 处理extractAnswer相关逻辑
-        const lastNum = allNumbers[allNumbers.length - 1];
-        if (/\d/.test(lastNum)) {
-             return parseFloat(lastNum.replace(/,/g, ""));
+    for (const pattern of patterns) {
+        const match = cleanText.match(pattern);
+        if (match) {
+            const value = Number.parseFloat(match[1].replace(/,/g, ""));
+            if (!Number.isNaN(value)) return value;
         }
     }
 
-    return NaN;
+    const allNumbers = cleanText.match(/-?[\d,.]+/g);
+    if (!allNumbers || allNumbers.length === 0) return NaN;
+
+    const lastNum = allNumbers[allNumbers.length - 1];
+    const value = Number.parseFloat(lastNum.replace(/,/g, ""));
+    return Number.isNaN(value) ? NaN : value;
 }
 
-async function main() {
-// 处理main相关逻辑
-    const dataPath = path.join(__dirname, CONFIG.data_file);
-    if (!fs.existsSync(dataPath)) {
- console.error(` ? ${dataPath}`);
+function safeProgress(message) {
+    process.stdout.write(message);
+}
+
+function clearProgressLine() {
+    if (typeof process.stdout.clearLine === "function" && typeof process.stdout.cursorTo === "function") {
+        process.stdout.clearLine(0);
+        process.stdout.cursorTo(0);
         return;
     }
 
-// 输出阶段统计信息
- console.log(" GSM8K ...");
-    const rawData = fs.readFileSync(dataPath, "utf-8");
-// 处理main相关逻辑
-    let dataset = rawData.split(/\r?\n/).filter(line => line.trim() !== "").map(line => {
-        try { return JSON.parse(line); } catch(e) { return null; }
-    }).filter(item => item !== null);
+    if (process.stdout.isTTY) {
+        readline.clearLine(process.stdout, 0);
+        readline.cursorTo(process.stdout, 0);
+        return;
+    }
 
-// 分支条件处理
-    if (dataset.length > 100) {
- console.log(` ?(${dataset.length} ? ?100 ?..`);
-        dataset = dataset.slice(0, 100);
+    process.stdout.write("\n");
+}
+
+async function main() {
+    let dataPath = path.join(__dirname, CONFIG.data_file);
+    if (!fs.existsSync(dataPath)) {
+        dataPath = path.join(__dirname, "..", "data_sets", "GSM8k", "test.jsonl");
+    }
+
+    if (!fs.existsSync(dataPath)) {
+        console.error(`[ERROR] Cannot find GSM8K dataset at ${dataPath}`);
+        return;
+    }
+
+    console.log(`[INFO] Loading GSM8K dataset from: ${dataPath}`);
+    const rawData = fs.readFileSync(dataPath, "utf-8");
+    let dataset = rawData
+        .split(/\r?\n/)
+        .filter(line => line.trim() !== "")
+        .map(line => {
+            try {
+                return JSON.parse(line);
+            } catch (_) {
+                return null;
+            }
+        })
+        .filter(Boolean);
+
+    if (dataset.length > CONFIG.limit) {
+        console.log(`[INFO] Dataset size (${dataset.length}) exceeds limit. Truncating to ${CONFIG.limit}.`);
+        dataset = dataset.slice(0, CONFIG.limit);
     }
 
     const total = dataset.length;
- console.log(` ?GSM8K (${total} ?`);
+    console.log(`[INFO] Start GSM8K Eval (${total} items) | API: ${CONFIG.api_url}`);
+    console.log("------------------------------------------------------------");
 
-// 分支条件处理
-    if (!fs.existsSync("./result")) fs.mkdirSync("./result");
-    const resFile = "./result/gsm8k_res.jsonl";
+    const resultDir = path.join(__dirname, "result");
+    if (!fs.existsSync(resultDir)) fs.mkdirSync(resultDir);
+    const resFile = path.join(resultDir, "gsm8k_res.jsonl");
     fs.writeFileSync(resFile, "");
 
-    let count = 0;
-    
-// 遍历数据集样本
+    let correctCount = 0;
+    let successCount = 0;
+    let totalTime = 0;
+
     for (let i = 0; i < total; i++) {
         const item = dataset[i];
         const question = item.question;
-        const expectVal = extractExpect(item.answer); // 读取标准答案
- process.stdout.write(` [${i + 1}/${total}] ?.. `);
+        const expectVal = extractExpect(item.answer);
 
-// 处理main相关逻辑
-        const { content: output, inferenceTime, error } = await askStream(question);
+        safeProgress(`[${i + 1}/${total}] Calculating...`);
 
-        if (error) {
-            await new Promise(r => setTimeout(r, 10000));
+        const initial = await askQuestion(question);
+        clearProgressLine();
+
+        if (initial.error) {
+            console.log(`[${i + 1}/${total}] [ERROR] ${initial.errorMsg}`);
+            if (i < total - 1) await new Promise(resolve => setTimeout(resolve, 1000));
             continue;
         }
 
-// 处理main相关逻辑
-        const answerVal = extractAnswer(output);
-        
-// 处理main相关逻辑
-        const isCorrect = !isNaN(answerVal) && !isNaN(expectVal) && Math.abs(answerVal - expectVal) < 1e-6;
-        
-        if (isCorrect) count++;
+        let finalOutput = initial.content;
+        let totalInferenceTime = initial.inferenceTime;
+        let recoveryUsed = false;
+        let answerVal = extractAnswer(finalOutput);
 
-        const acc = ((count / (i + 1)) * 100).toFixed(1);
-        const timeStr = inferenceTime.toFixed(1) + "s";
+        if (Number.isNaN(answerVal)) {
+            const recovery = await recoverAnswer(question, finalOutput);
+            if (!recovery.error) {
+                recoveryUsed = true;
+                totalInferenceTime += recovery.inferenceTime;
+                finalOutput = recovery.content;
+                answerVal = extractAnswer(finalOutput);
+            }
+        }
 
-// 打印实时进度
-        process.stdout.write("\r" + " ".repeat(100) + "\r"); 
-        
-// 打印实时进度
-// 打印实时进度
- process.stdout.write(` [${i + 1}/${total}] ${isCorrect ? 'OK' : 'FAIL'} | Acc:${acc}% | :${timeStr} | ?${answerVal} ( ?${expectVal})\n`);
+        successCount++;
+        totalTime += totalInferenceTime;
 
-// 构建本题结果记录
+        const isCorrect = !Number.isNaN(answerVal) && !Number.isNaN(expectVal) && Math.abs(answerVal - expectVal) < 1e-6;
+        if (isCorrect) correctCount++;
+
+        const acc = ((correctCount / successCount) * 100).toFixed(1);
+        const avgTime = (totalTime / successCount).toFixed(1);
+        const suffix = recoveryUsed ? " [recovery]" : "";
+        const shownAnswer = Number.isNaN(answerVal) ? "FORMAT_ERROR" : String(answerVal);
+
+        console.log(`[${i + 1}/${total}] ${isCorrect ? "[OK]" : "[FAIL]"} Acc:${acc}% | Time:${totalInferenceTime.toFixed(1)}s (Avg:${avgTime}s)${suffix} | Ans:${shownAnswer} (Exp:${expectVal})`);
+
         const record = {
             id: i + 1,
             q: question,
-            out: output, // 处理main相关逻辑
-            ans_ext: answerVal,
+            out: initial.content,
+            final_out: finalOutput,
+            ans_ext: Number.isNaN(answerVal) ? "FORMAT_ERROR" : answerVal,
             exp: expectVal,
             ok: isCorrect,
-            ms: (inferenceTime * 1000).toFixed(0)
+            recovery: recoveryUsed,
+            ms: (totalInferenceTime * 1000).toFixed(0)
         };
         fs.appendFileSync(resFile, JSON.stringify(record) + "\n");
 
-// 题间冷却，避免请求过载
         if (i < total - 1) {
-            const steps = CONFIG.cooldown_ms / 100;
-            for(let c = 0; c < steps; c++) {
- process.stdout.write(`\r ?.. ${(CONFIG.cooldown_ms - c*100)/1000}s `);
-                await new Promise(r => setTimeout(r, 100));
-            }
-            process.stdout.write("\r" + " ".repeat(40) + "\r"); 
+            await new Promise(resolve => setTimeout(resolve, CONFIG.cooldown_ms));
         }
     }
 
- console.log(`\n : ${((count / total) * 100).toFixed(2)}%`);
+    if (successCount === 0) {
+        console.log("------------------------------------------------------------");
+        console.log(`[SUMMARY] All ${total} requests failed. No model responses were received.`);
+        return;
+    }
+
+    const finalAcc = ((correctCount / total) * 100).toFixed(2);
+    const finalAvgTime = (totalTime / successCount).toFixed(2);
+
+    console.log("------------------------------------------------------------");
+    console.log(`[SUMMARY] Total: ${total} | Correct: ${correctCount} | Accuracy: ${finalAcc}% | Avg Latency: ${finalAvgTime}s`);
 }
 
 main();
-
-

@@ -1,20 +1,20 @@
 ﻿// test_single.js
 // 测试运行配置
 const CONFIG = {
-    url: "http://localhost:8000/v1/chat/completions",
+    url: "http://172.22.162.17:8000/chat/completions",
     model: "9g_8b_thinking",
  prompt: " "
 };
 
 async function testConnection() {
- console.log("1. localhost:8000 ...");
+ console.log("1. 172.22.162.17:8000 ...");
     
     try {
 // 处理testConnection相关逻辑
-        const healthCheck = await fetch("http://localhost:8000/", { method: "GET" });
+        const healthCheck = await fetch("http://172.22.162.17:8000/", { method: "GET" });
  console.log(`2. : [HTTP ${healthCheck.status}] ( 404/405/200 )`);
     } catch (e) {
- console.error(" : localhost:8000 VS Code ");
+ console.error(" : 172.22.162.17:8000 VS Code ");
  console.error(" :", e.message);
         return; // 输出错误信息
     }

@@ -1,10 +1,11 @@
 ﻿// 导入文件系统模块
 const fs = require("fs");
 const path = require("path");
+const { openChatCompletionStream } = require("./api_client");
 
 // 测试运行配置
 const CONFIG = {
-    api_url: "http://localhost:8000/v1/chat/completions",
+    api_url: "http://172.22.162.17:8000/chat/completions",
     model_name: "9g_8b_thinking",
 // 单次请求最大输出长度
     max_tokens: 8192, 
@@ -16,21 +17,6 @@ const CONFIG = {
     data_file: "../data_sets/TriviaQA/verified-web-dev.json"
 };
 // ================================================
-
-// 封装带超时控制的请求
-async function fetchWithTimeout(resource, options = {}) {
-    const { timeout = 8000 } = options;
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), timeout);
-    try {
-        const response = await fetch(resource, { ...options, signal: controller.signal });
-        clearTimeout(id);
-        return response;
-    } catch (error) {
-        clearTimeout(id);
-        throw error;
-    }
-}
 
 // 调用模型并获取回答
 async function askStream(question) {
@@ -64,14 +50,11 @@ Answer: Paris
     let fullContent = "";
 
     try {
-        const response = await fetchWithTimeout(CONFIG.api_url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-            timeout: CONFIG.timeout_ms
+        const { response } = await openChatCompletionStream({
+            preferredUrl: CONFIG.api_url,
+            payload,
+            timeoutMs: CONFIG.timeout_ms
         });
-
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder("utf-8");
@@ -106,8 +89,8 @@ Answer: Paris
             }
         }
     } catch (err) {
- process.stdout.write(`\n ? : ${err.message}\n`);
-        return { content: "", inferenceTime: 0, error: true };
+ process.stdout.write(`\n ? :\n${err.message}\n`);
+        return { content: "", inferenceTime: 0, error: true, errorMsg: err.message };
     }
 
     const t1 = Date.now();
@@ -183,6 +166,8 @@ async function main() {
     fs.writeFileSync(resFile, "");
 
     let count = 0;
+    let successCount = 0;
+    let errorCount = 0;
     
 // 遍历数据集样本
     for (let i = 0; i < total; i++) {
@@ -195,9 +180,12 @@ async function main() {
         const { content: output, inferenceTime, error } = await askStream(question);
 
         if (error) {
+            errorCount++;
             await new Promise(r => setTimeout(r, 10000));
             continue;
         }
+
+        successCount++;
 
 // 提取最终答案文本
         const answer = extractAnswer(output);
@@ -236,6 +224,16 @@ async function main() {
             }
             process.stdout.write("\r" + " ".repeat(40) + "\r"); 
         }
+    }
+
+    if (successCount === 0) {
+ console.log(`\nAll ${total} requests failed. No model responses were received.`);
+ console.log("Please check network reachability or set OPENAI_API_URL explicitly.");
+        return;
+    }
+
+    if (errorCount > 0) {
+ console.log(`\nWarning: ${errorCount} requests failed. Accuracy below is still computed over ${total} samples.`);
     }
 
  console.log(`\n : ${((count / total) * 100).toFixed(2)}%`);

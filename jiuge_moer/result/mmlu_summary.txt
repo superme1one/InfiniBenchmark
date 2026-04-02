@@ -1,0 +1,9 @@
+MMLU Test Summary (2026-04-01T09:50:30.085Z)
+API: http://127.0.0.1:9500/chat/completions
+Model: 9G-8B
+
+abstract_algebra: 16.0% (16/100)
+anatomy: 23.0% (23/100)
+astronomy: 25.0% (25/100)
+business_ethics: 44.0% (44/100)
+clinical_knowledge: 15.0% (15/100)

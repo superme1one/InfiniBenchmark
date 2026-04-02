@@ -1,10 +1,11 @@
 ﻿// 导入文件系统模块
 const fs = require("fs");
 const path = require("path");
+const { openChatCompletionStream } = require("./api_client");
 
 // 测试运行配置
 const CONFIG = {
-    api_url: "http://localhost:8000/v1/chat/completions",
+    api_url: "http://172.22.162.17:8000/chat/completions",
     model_name: "9g_8b_thinking",
 // 单次请求最大输出长度
     max_tokens: 4096, 
@@ -18,21 +19,6 @@ const CONFIG = {
     limit: 100
 };
 // ================================================
-
-// 封装带超时控制的请求
-async function fetchWithTimeout(resource, options = {}) {
-    const { timeout = 8000 } = options;
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), timeout);
-    try {
-        const response = await fetch(resource, { ...options, signal: controller.signal });
-        clearTimeout(id);
-        return response;
-    } catch (error) {
-        clearTimeout(id);
-        throw error;
-    }
-}
 
 // 调用模型并获取回答
 async function askStream(prompt, isNumberType) {
@@ -83,14 +69,11 @@ Answer: Seattle Seahawks
     let fullContent = "";
 
     try {
-        const response = await fetchWithTimeout(CONFIG.api_url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-            timeout: CONFIG.timeout_ms
+        const { response } = await openChatCompletionStream({
+            preferredUrl: CONFIG.api_url,
+            payload,
+            timeoutMs: CONFIG.timeout_ms
         });
-
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder("utf-8");
@@ -124,8 +107,8 @@ Answer: Seattle Seahawks
             }
         }
     } catch (err) {
- process.stdout.write(`\n ? : ${err.message}\n`);
-        return { content: "", inferenceTime: 0, error: true };
+ process.stdout.write(`\n ? :\n${err.message}\n`);
+        return { content: "", inferenceTime: 0, error: true, errorMsg: err.message };
     }
 
     const t1 = Date.now();
@@ -233,6 +216,8 @@ async function main() {
     fs.writeFileSync(resFile, "");
 
     let count = 0;
+    let successCount = 0;
+    let errorCount = 0;
     let totalTime = 0; // 累计总耗时（毫秒）
 // 遍历数据集样本
     for (let i = 0; i < total; i++) {
@@ -251,9 +236,12 @@ async function main() {
         const { content: output, inferenceTime, error } = await askStream(basePrompt, isNum);
 
         if (error) {
+            errorCount++;
             await new Promise(r => setTimeout(r, 5000));
             continue;
         }
+
+        successCount++;
 
 // 处理main相关逻辑
         totalTime += inferenceTime;
@@ -302,12 +290,21 @@ async function main() {
         }
     }
 
-    const finalAvgTime = (totalTime / total).toFixed(2);
+    if (successCount === 0) {
+ console.log("\nAll requests failed. No model responses were received.");
+ console.log("Please check network reachability or set OPENAI_API_URL explicitly.");
+        return;
+    }
+
+    const finalAvgTime = (totalTime / successCount).toFixed(2);
     const finalAcc = ((count / total) * 100).toFixed(2);
 
     console.log("Test completed.");
  console.log(` : ${finalAcc}%`);
     console.log(`Average latency: ${finalAvgTime} s`);
+    if (errorCount > 0) {
+ console.log(`Failed requests: ${errorCount}`);
+    }
 }
 
 main();

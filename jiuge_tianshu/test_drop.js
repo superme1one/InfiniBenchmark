@@ -272,12 +272,14 @@ async function main() {
         // --- UI 更新 ---
         process.stdout.write("\r" + " ".repeat(100) + "\r"); 
         
-        // 简略显�?
+        // 简略显示
         const shortAns = answer.length > 15 ? answer.substring(0, 15) + "..." : answer;
-        const shortExp = expectList[0].length > 15 ? expectList[0].substring(0, 15) + "..." : expectList[0];
+        const firstExpect = expectList[0] || "";
+        const shortExp = firstExpect.length > 15 ? firstExpect.substring(0, 15) + "..." : firstExpect;
+        const statusIcon = correct ? "[OK]" : "[FAIL]";
         
-        // 🌟 重点：显�?AvgTime
-        process.stdout.write(`   [${i + 1}/${total}] ${correct ? '�? : '�?} | Acc:${acc}% | 本题:${thisTimeStr} | Avg:${currentAvgTime}s | �?${shortAns} (�?${shortExp})\n`);
+        // 显示当前平均耗时
+        process.stdout.write(`   [${i + 1}/${total}] ${statusIcon} | Acc:${acc}% | 本题:${thisTimeStr} | Avg:${currentAvgTime}s | Ans:${shortAns} (Exp:${shortExp})\n`);
 
         // --- 记录文件 ---
         const record = {
