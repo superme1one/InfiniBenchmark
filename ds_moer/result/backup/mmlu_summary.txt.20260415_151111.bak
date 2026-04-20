@@ -1,0 +1,8 @@
+MMLU Test Summary (2026-04-15T02:18:36.253Z)
+API: http://127.0.0.1:9501/chat/completions
+Model: 9G-8B
+
+[INFO] Previous summary backed up to: C:\Users\humoyan\Desktop\InfiniBenchmark\ds_moer\result\backup\mmlu_summary.txt.20260415_101836.bak
+
+[PROBE] OK in 0.12s | Alright
+

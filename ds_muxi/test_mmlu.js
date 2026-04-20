@@ -4,7 +4,7 @@ const { openChatCompletionStream } = require("./api_client");
 
 const CONFIG = {
     api_url: process.env.INFINILM_API_URL || "http://172.22.162.17:8000/chat/completions",
-    model_name: process.env.INFINILM_MODEL || "9g_8b_thinking",
+    model_name: process.env.INFINILM_MODEL || "deepseek-r1",
     max_tokens: Number(process.env.MMLU_MAX_TOKENS || 2048),
     temperature: Number(process.env.MMLU_TEMPERATURE || 0.1),
     top_p: Number(process.env.MMLU_TOP_P || 0.9),

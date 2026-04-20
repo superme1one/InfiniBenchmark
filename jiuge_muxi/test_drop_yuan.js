@@ -1,43 +1,30 @@
-﻿// test_drop_100_avg_time.js
+﻿// 导入文件系统模块
 const fs = require("fs");
 const path = require("path");
+const { openChatCompletionStream } = require("./api_client");
 
-// ================== ⚙️ 核心配置 ==================
+// 测试运行配置
 const CONFIG = {
-    api_url: "http://localhost:9000/chat",
+    api_url: "http://172.22.162.17:8000/chat/completions",
     model_name: "9g_8b_thinking",
-    // DROP 需要阅读长文章，给�?Token
+// 单次请求最大输出长度
     max_tokens: 4096, 
-    // 答完一题休�?
+// 样本间冷却时间（毫秒）
     cooldown_ms: 2000, 
-    // 单题超时
+// 单次请求超时（毫秒）
     timeout_ms: 600000,
-    // 数据文件路径
+// 数据集文件路径
     data_file: "../data_sets/DROP/train.jsonl",
-    // ⚠️ 仅测试前 100 �?
+// 业务逻辑处理
     limit: 100
 };
 // ================================================
 
-// 带超时的 Fetch
-async function fetchWithTimeout(resource, options = {}) {
-    const { timeout = 8000 } = options;
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), timeout);
-    try {
-        const response = await fetch(resource, { ...options, signal: controller.signal });
-        clearTimeout(id);
-        return response;
-    } catch (error) {
-        clearTimeout(id);
-        throw error;
-    }
-}
-
-// 核心请求函数
+// 调用模型并获取回答
 async function askStream(prompt, isNumberType) {
     const systemPrompt = "You are an expert in reading comprehension and arithmetic.";
-
+    
+// 处理askStream相关逻辑
     let instructions = "";
     if (isNumberType) {
         instructions = `
@@ -65,102 +52,128 @@ Answer: Seattle Seahawks
 `.trim();
     }
 
-    const fullPrompt = `${systemPrompt}
-
-${prompt}
-
-${instructions}`;
+    const userPrompt = `${prompt}\n\n${instructions}`;
 
     const payload = {
-        prompt: fullPrompt,
+        model: CONFIG.model_name,
+        messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt }
+        ],
         max_tokens: CONFIG.max_tokens,
-        temperature: 0.1,
-        top_p: 1.0,
-        top_k: 1
+        temperature: 0.1, 
+        stream: true
     };
 
     const t0 = Date.now();
+    let fullContent = "";
 
     try {
-        const response = await fetchWithTimeout(CONFIG.api_url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-            timeout: CONFIG.timeout_ms
+        const { response } = await openChatCompletionStream({
+            preferredUrl: CONFIG.api_url,
+            payload,
+            timeoutMs: CONFIG.timeout_ms
         });
 
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buffer = "";
 
-        const data = await response.json();
-        const fullContent = data.response || "";
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-        const t1 = Date.now();
-        return { content: fullContent, inferenceTime: (t1 - t0) / 1000, error: false };
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop(); 
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (trimmed.startsWith("data: ")) {
+                    const jsonStr = trimmed.slice(6);
+                    if (jsonStr === "[DONE]") continue;
+                    try {
+                        const json = JSON.parse(jsonStr);
+                        const token = json.choices[0].delta?.content || json.choices[0].text || "";
+                        if (token) {
+                            fullContent += token;
+                            if (fullContent.length % 50 === 0) {
+                                const preview = fullContent.slice(-40).replace(/\n/g, " ");
+ process.stdout.write(`\r ? ... [${fullContent.length} ...${preview} `);
+                            }
+                        }
+                    } catch (e) { }
+                }
+            }
+        }
     } catch (err) {
-        process.stdout.write(`\n�?请求出错: ${err.message}\n`);
-        return { content: "", inferenceTime: 0, error: true };
+ process.stdout.write(`\n ? :\n${err.message}\n`);
+        return { content: "", inferenceTime: 0, error: true, errorMsg: err.message };
     }
+
+    const t1 = Date.now();
+    return { content: fullContent, inferenceTime: (t1 - t0) / 1000, error: false };
 }
 
-// 🛠 辅助：构造基础 Prompt (Passage + Question)
+// 函数：buildBasePrompt
 function buildBasePrompt(passage, question) {
     return `Passage:\n${passage}\n\nQuestion:\n${question}`;
 }
 
-// 🛠 辅助：判断是否为数字�?
+// 函数：hasNumberType
 function hasNumberType(types) {
     return Array.isArray(types) && types.some(t => String(t).toLowerCase() === "number");
 }
 
-// 🧹 清洗答案 (Standardize for DROP evaluation)
+// 文本归一化，便于稳健比较
 function normalizeAnswer(s) {
     if (!s) return "";
     return String(s)
         .toLowerCase()
-        .replace(/\b(a|an|the)\b/g, " ") // 去掉冠词
-        .replace(/[.,!?;:"]/g, "")      // 去掉标点
-        .replace(/\s+/g, " ")            // 合并空格
+        .replace(/\b(a|an|the)\b/g, " ") // 去除冠词，降低匹配噪声
+        .replace(/[.,!?;:"]/g, "") // 去除常见标点
+        .replace(/\s+/g, " ") // 合并多余空白字符
         .trim();
 }
 
-// 🧹 提取模型答案
+// 从文本中提取标准答案
 function extractAnswer(rawOutput) {
     if (!rawOutput) return "";
     
-    // 1. 去掉 </think> 之前的内�?
+// 处理extractAnswer相关逻辑
     let cleanText = rawOutput;
     const thinkIndex = rawOutput.lastIndexOf("</think>");
     if (thinkIndex !== -1) {
         cleanText = rawOutput.slice(thinkIndex + 8).trim();
     }
 
-    // 2. 提取 Answer: 之后的内�?
+// 处理extractAnswer相关逻辑
     const match = cleanText.match(/Answer:\s*(.*)/i);
     let result = "";
     if (match) {
-        // 取第一�?
+// 处理extractAnswer相关逻辑
         result = match[1].split('\n')[0];
     } else {
-        // 兜底：取最后一行非�?
+// 处理extractAnswer相关逻辑
         const lines = cleanText.split('\n').filter(l => l.trim().length > 0);
         if (lines.length > 0) result = lines[lines.length - 1];
     }
     
-    // 清理首尾特殊字符
-    return result.replace(/^[\s"'«»“”‘�?>\[\]()]+|[\s"'«»“”‘�?>\[\]()]+$/g, "");
+// 返回结果
+ return result.replace(/^[\s"' ?>\[\]()]+|[\s"' ?>\[\]()]+$/g, "");
 }
 
-// 🎯 判题逻辑
+// 函数：matchExpect
 function matchExpect(expectList, modelAnswer) {
     if (!modelAnswer) return false;
     const normModel = normalizeAnswer(modelAnswer);
 
-    // 只要匹配到了 expectList 中的任意一个答案即�?
+// 返回结果
     return expectList.some(exp => {
         const normExp = normalizeAnswer(exp);
-        // 1. 文本包含匹配 (宽松)
+// 分支条件处理
         if (normModel.includes(normExp)) return true;
-        // 2. 数字匹配 (处理 10 vs 10.0)
+// 处理matchExpect相关逻辑
         const numModel = parseFloat(normModel);
         const numExp = parseFloat(normExp);
         if (!isNaN(numModel) && !isNaN(numExp)) {
@@ -171,18 +184,15 @@ function matchExpect(expectList, modelAnswer) {
 }
 
 async function main() {
-    // 1. 寻找数据文件
-    let dataPath = path.join(__dirname, CONFIG.data_file);
+// 处理main相关逻辑
+    const dataPath = path.join(__dirname, CONFIG.data_file);
     if (!fs.existsSync(dataPath)) {
-        dataPath = path.join(__dirname, "..", "data_sets", "DROP", "train.jsonl");
-    }
-    if (!fs.existsSync(dataPath)) {
-        console.error(`错误：找不到数据文件 ${dataPath}`);
+ console.error(` ? ${dataPath}`);
         return;
     }
 
-    // 2. 加载数据 (JSONL)
-    console.log("📂 正在加载 DROP 数据...");
+// 输出阶段统计信息
+ console.log(" DROP ...");
     const rawData = fs.readFileSync(dataPath, "utf-8");
     let dataset = rawData.split(/\r?\n/)
         .filter(line => line.trim() !== "")
@@ -191,24 +201,25 @@ async function main() {
         })
         .filter(item => item !== null);
 
-    // ✂️ 截取�?100 �?
+// 分支条件处理
     if (dataset.length > CONFIG.limit) {
-        console.log(`✂️ 数据集较�?(${dataset.length}�?，仅测试�?${CONFIG.limit} �?..`);
+ console.log(` ?(${dataset.length} ? ?${CONFIG.limit} ?..`);
         dataset = dataset.slice(0, CONFIG.limit);
     }
 
     const total = dataset.length;
-    console.log(`🚀 开始测�?DROP (${total} 条数�?`);
+ console.log(` ?DROP (${total} ?`);
 
-    // 3. 准备结果文件
+// 分支条件处理
     if (!fs.existsSync("./result")) fs.mkdirSync("./result");
     const resFile = "./result/drop_res.jsonl";
     fs.writeFileSync(resFile, "");
 
     let count = 0;
-    let totalTime = 0; // ⏱️ 用于统计总时�?
-    
-    // 4. 开始循�?
+    let successCount = 0;
+    let errorCount = 0;
+    let totalTime = 0; // 累计总耗时（毫秒）
+// 遍历数据集样本
     for (let i = 0; i < total; i++) {
         const item = dataset[i];
         const passage = item.passage;
@@ -219,42 +230,43 @@ async function main() {
         const isNum = hasNumberType(types);
         const basePrompt = buildBasePrompt(passage, question);
 
-        process.stdout.write(`   [${i + 1}/${total}] 连接�?.. `);
+ process.stdout.write(` [${i + 1}/${total}] ?.. `);
 
-        // --- 请求 ---
+// 处理main相关逻辑
         const { content: output, inferenceTime, error } = await askStream(basePrompt, isNum);
 
         if (error) {
+            errorCount++;
             await new Promise(r => setTimeout(r, 5000));
             continue;
         }
 
-        // --- 累计时间 ---
+        successCount++;
+
+// 处理main相关逻辑
         totalTime += inferenceTime;
 
-        // --- 提取与判�?---
+// 提取最终答案文本
         const answer = extractAnswer(output);
         const correct = matchExpect(expectList, answer);
         if (correct) count++;
 
-        // 计算当前准确率和平均时间
+// 计算当前累计准确率
         const acc = ((count / (i + 1)) * 100).toFixed(1);
         const currentAvgTime = (totalTime / (i + 1)).toFixed(2);
         const thisTimeStr = inferenceTime.toFixed(1) + "s";
 
-        // --- UI 更新 ---
+// 打印实时进度
         process.stdout.write("\r" + " ".repeat(100) + "\r"); 
         
-        // 简略显示
+// 处理main相关逻辑
         const shortAns = answer.length > 15 ? answer.substring(0, 15) + "..." : answer;
-        const firstExpect = expectList[0] || "";
-        const shortExp = firstExpect.length > 15 ? firstExpect.substring(0, 15) + "..." : firstExpect;
-        const statusIcon = correct ? "[OK]" : "[FAIL]";
+        const shortExp = expectList[0].length > 15 ? expectList[0].substring(0, 15) + "..." : expectList[0];
         
-        // 显示当前平均耗时
-        process.stdout.write(`   [${i + 1}/${total}] ${statusIcon} | Acc:${acc}% | 本题:${thisTimeStr} | Avg:${currentAvgTime}s | Ans:${shortAns} (Exp:${shortExp})\n`);
+// 打印实时进度
+ process.stdout.write(` [${i + 1}/${total}] ${correct ? 'OK' : 'FAIL'} | Acc:${acc}% | :${thisTimeStr} | Avg:${currentAvgTime}s | ?${shortAns} ( ?${shortExp})\n`);
 
-        // --- 记录文件 ---
+// 构建本题结果记录
         const record = {
             id: i + 1,
             q: question,
@@ -267,23 +279,33 @@ async function main() {
         };
         fs.appendFileSync(resFile, JSON.stringify(record) + "\n");
 
-        // --- 冷却 ---
+// 题间冷却，避免请求过载
         if (i < total - 1) {
             const steps = CONFIG.cooldown_ms / 100;
             for(let c = 0; c < steps; c++) {
-                process.stdout.write(`\r            ❄️ 冷却�?.. ${(CONFIG.cooldown_ms - c*100)/1000}s `);
+ process.stdout.write(`\r ?.. ${(CONFIG.cooldown_ms - c*100)/1000}s `);
                 await new Promise(r => setTimeout(r, 100));
             }
             process.stdout.write("\r" + " ".repeat(40) + "\r"); 
         }
     }
 
-    const finalAvgTime = (totalTime / total).toFixed(2);
+    if (successCount === 0) {
+ console.log("\nAll requests failed. No model responses were received.");
+ console.log("Please check network reachability or set OPENAI_API_URL explicitly.");
+        return;
+    }
+
+    const finalAvgTime = (totalTime / successCount).toFixed(2);
     const finalAcc = ((count / total) * 100).toFixed(2);
 
-    console.log(`\n🎉 测试完成！`);
-    console.log(`📊 最终准确率: ${finalAcc}%`);
-    console.log(`⏱️ 平均推理时长: ${finalAvgTime} 秒`);
+    console.log("Test completed.");
+ console.log(` : ${finalAcc}%`);
+    console.log(`Average latency: ${finalAvgTime} s`);
+    if (errorCount > 0) {
+ console.log(`Failed requests: ${errorCount}`);
+    }
 }
 
 main();
+

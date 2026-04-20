@@ -1,0 +1,6 @@
+MMLU Test Summary (2026-04-13T07:27:38.538Z)
+API: http://127.0.0.1:9501/chat/completions
+Model: 9G-8B
+
+[PROBE] OK in 2.73s | <
+

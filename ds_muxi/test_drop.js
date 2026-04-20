@@ -4,7 +4,7 @@ const { openChatCompletionStream } = require("./api_client");
 
 const CONFIG = {
     api_url: "http://172.22.162.17:8000/chat/completions",
-    model_name: "9g_8b_thinking",
+    model_name: "deepseek-r1",
     max_tokens: Number(process.env.DROP_MAX_TOKENS || 1024),
     cooldown_ms: Number(process.env.DROP_COOLDOWN_MS || 2000),
     timeout_ms: Number(process.env.DROP_TIMEOUT_MS || 600000),
