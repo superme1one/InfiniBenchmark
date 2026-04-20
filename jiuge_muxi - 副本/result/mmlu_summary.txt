@@ -1,0 +1,5 @@
+MMLU Test Summary (2026-04-16T03:09:50.245Z)
+
+abstract_algebra: 64.0% (64/100)
+anatomy: 48.0% (48/100)
+astronomy: 60.0% (60/100)

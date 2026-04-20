@@ -298,6 +298,59 @@ function shorten(text, maxLen = 20) {
     return s.length > maxLen ? `${s.slice(0, maxLen)}...` : s;
 }
 
+function loadExistingResults(resFile) {
+    if (!fs.existsSync(resFile)) {
+        return {
+            records: [],
+            completedIds: new Set(),
+            correctCount: 0,
+            totalTime: 0,
+            validResponsesCount: 0
+        };
+    }
+
+    const lines = fs.readFileSync(resFile, "utf-8")
+        .split(/\r?\n/)
+        .filter(line => line.trim() !== "");
+
+    const records = [];
+    const completedIds = new Set();
+    let correctCount = 0;
+    let totalTime = 0;
+    let validResponsesCount = 0;
+
+    for (const line of lines) {
+        try {
+            const rec = JSON.parse(line);
+            if (!rec || typeof rec !== "object") continue;
+
+            records.push(rec);
+
+            if (Number.isInteger(rec.id) && rec.id > 0) {
+                completedIds.add(rec.id);
+            }
+
+            if (rec.ok) correctCount++;
+
+            const ms = Number(rec.ms);
+            if (!Number.isNaN(ms) && ms >= 0) {
+                totalTime += ms / 1000;
+                validResponsesCount++;
+            }
+        } catch (_) {
+            // ignore malformed lines
+        }
+    }
+
+    return {
+        records,
+        completedIds,
+        correctCount,
+        totalTime,
+        validResponsesCount
+    };
+}
+
 async function main() {
     let dataPath = path.join(__dirname, CONFIG.data_file);
     if (!fs.existsSync(dataPath)) {
@@ -337,13 +390,36 @@ async function main() {
     if (!fs.existsSync(resultDir)) fs.mkdirSync(resultDir);
 
     const resFile = path.join(resultDir, "drop_res_optimized.jsonl");
-    fs.writeFileSync(resFile, "");
 
-    let correctCount = 0;
-    let totalTime = 0;
-    let validResponsesCount = 0;
+    const {
+        records,
+        completedIds,
+        correctCount: loadedCorrectCount,
+        totalTime: loadedTotalTime,
+        validResponsesCount: loadedValidResponsesCount
+    } = loadExistingResults(resFile);
+
+    let correctCount = loadedCorrectCount;
+    let totalTime = loadedTotalTime;
+    let validResponsesCount = loadedValidResponsesCount;
+
+    if (records.length > 0) {
+        const maxCompletedId = Math.max(...records.map(r => Number(r.id) || 0));
+        console.log(
+            `[RESUME] Found ${records.length} existing records, ` +
+            `${completedIds.size} completed items. Next candidate: ${Math.min(maxCompletedId + 1, total)}`
+        );
+    } else {
+        console.log("[RESUME] No existing result file found. Starting fresh.");
+    }
 
     for (let i = 0; i < total; i++) {
+        const itemId = i + 1;
+
+        if (completedIds.has(itemId)) {
+            continue;
+        }
+
         const item = dataset[i];
         const passage = item.passage;
         const question = item.question;
@@ -351,12 +427,12 @@ async function main() {
         const expectList = item.answers_spans?.spans || [];
         const isNum = hasNumberType(types);
 
-        process.stdout.write(`[${i + 1}/${total}] Calculating...`);
+        process.stdout.write(`[${itemId}/${total}] Calculating...`);
         const { content: output, inferenceTime, error, errorMsg } = await ask(passage, question, isNum);
         clearProgressLine();
 
         if (error) {
-            console.log(`[${i + 1}/${total}] [ERROR] ${errorMsg}`);
+            console.log(`[${itemId}/${total}] [ERROR] ${errorMsg}`);
             if (i < total - 1) {
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
@@ -370,18 +446,22 @@ async function main() {
         const correct = matchExpect(expectList, answer);
         if (correct) correctCount++;
 
-        const acc = ((correctCount / validResponsesCount) * 100).toFixed(1);
-        const avgTime = (totalTime / validResponsesCount).toFixed(2);
+        const acc = validResponsesCount > 0
+            ? ((correctCount / validResponsesCount) * 100).toFixed(1)
+            : "0.0";
+        const avgTime = validResponsesCount > 0
+            ? (totalTime / validResponsesCount).toFixed(2)
+            : "0.00";
         const firstExpect = expectList[0] || "";
 
         console.log(
-            `[${i + 1}/${total}] ${correct ? "[OK]" : "[FAIL]"} | ` +
+            `[${itemId}/${total}] ${correct ? "[OK]" : "[FAIL]"} | ` +
             `Acc:${acc}% | Time:${inferenceTime.toFixed(1)}s | Avg:${avgTime}s | ` +
             `Ans:${shorten(answer, 18)} (Exp:${shorten(firstExpect, 18)})`
         );
 
         const record = {
-            id: i + 1,
+            id: itemId,
             q: question,
             out: output,
             ans_ext: answer,
@@ -389,7 +469,9 @@ async function main() {
             ok: correct,
             ms: (inferenceTime * 1000).toFixed(0)
         };
+
         fs.appendFileSync(resFile, JSON.stringify(record) + "\n");
+        completedIds.add(itemId);
 
         if (!correct) {
             console.log("[DEBUG] output_tail:", shorten(output.slice(-300), 300));
@@ -400,11 +482,15 @@ async function main() {
         }
     }
 
+    const completedTotal = completedIds.size;
     const finalAvgTime = validResponsesCount > 0 ? (totalTime / validResponsesCount).toFixed(2) : "0.00";
-    const finalAcc = total > 0 ? ((correctCount / total) * 100).toFixed(2) : "0.00";
+    const finalAcc = validResponsesCount > 0 ? ((correctCount / validResponsesCount) * 100).toFixed(2) : "0.00";
 
     console.log("------------------------------------------------------------");
-    console.log(`[SUMMARY] Total: ${total} | Correct: ${correctCount} | Accuracy: ${finalAcc}% | Avg Latency: ${finalAvgTime}s`);
+    console.log(
+        `[SUMMARY] Dataset Total: ${total} | Completed: ${completedTotal} | ` +
+        `Correct: ${correctCount} | Accuracy: ${finalAcc}% | Avg Latency: ${finalAvgTime}s`
+    );
 }
 
 main();
