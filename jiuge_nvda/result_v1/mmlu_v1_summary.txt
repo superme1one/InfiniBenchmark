@@ -1,0 +1,7 @@
+abstract_algebra	42/100	42.00%
+anatomy	88/135	65.19%
+astronomy	122/152	80.26%
+business_ethics	65/100	65.00%
+clinical_knowledge	173/265	65.28%
+college_biology	105/144	72.92%
+college_chemistry	49/100	49.00%

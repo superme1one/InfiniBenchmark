@@ -7,11 +7,9 @@ const {
     buildSummaryPayload,
     createStatsTracker,
     ensureDir,
-    extractTail,
     formatMs,
     getDatasetPath,
     getGpuStats,
-    normalizeText,
     sleep,
     startGpuMonitor,
     updateStatsTracker,
@@ -20,36 +18,89 @@ const {
 
 const LIMIT = Number(process.env.TRIVIAQA_LIMIT || 0);
 const RESULT_DIR = DEFAULT_CONFIG.resultDir;
+const TRIVIAQA_MAX_TOKENS = Number(process.env.TRIVIAQA_MAX_TOKENS || 1024);
+const TRIVIAQA_TEMPERATURE = Number(process.env.TRIVIAQA_TEMPERATURE || 0.1);
 
 function buildPrompt(question) {
-    return [
-        "Answer the trivia question as concisely as possible.",
-        "",
-        `Question: ${question}`,
-        "",
-        "Return only the final short answer.",
-        "Answer:",
-    ].join("\n");
+    return `
+Question:
+${question}
+
+Instructions:
+1. Think briefly and recall the correct fact as quickly as possible.
+2. Keep the final answer concise: just the entity, title, place, date, or short fact.
+3. You must end with exactly one final line in this format: Answer: <final answer>
+4. Do not output anything after the final answer.
+
+Example:
+<think>
+Brief reasoning.
+</think>
+Answer: Paris
+`.trim();
+}
+
+function cleanModelOutput(rawOutput) {
+    if (!rawOutput) return "";
+
+    return String(rawOutput)
+        .replace(/\u0000/g, "")
+        .replace(/<\|im_end\|>/gi, "")
+        .replace(/<\|endoftext\|>/gi, "")
+        .trim();
 }
 
 function extractPrediction(output) {
-    const tail = extractTail(output);
-    const match = tail.match(/answer\s*[:：]\s*(.+)$/im);
-    if (match) return match[1].trim().split(/\r?\n/)[0].trim();
+    const cleaned = cleanModelOutput(output);
+    if (!cleaned) return "";
+
+    const tail = cleaned.includes("</think>")
+        ? cleaned.slice(cleaned.lastIndexOf("</think>") + 8).trim()
+        : cleaned;
+
+    const explicit = tail.match(/Answer\s*:\s*(.+)/i) || cleaned.match(/Answer\s*:\s*(.+)/i);
+    if (explicit) {
+        return explicit[1]
+            .split(/\r?\n/)[0]
+            .replace(/^[\s"'`([{]+|[\s"'`)\]}.,;:!?]+$/g, "")
+            .trim();
+    }
 
     const lines = tail.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-    return lines.length > 0 ? lines[0] : "";
+    for (let i = lines.length - 1; i >= 0; i--) {
+        const line = lines[i];
+        if (/^(question|instructions|example|response)\s*:/i.test(line)) continue;
+        if (/^(let me|i think|i need|first,|the question)/i.test(line)) continue;
+        if (line.length > 0 && line.length <= 120) {
+            return line;
+        }
+    }
+
+    return "";
+}
+
+function normalizeTriviaText(text) {
+    return String(text || "")
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}\s]/gu, " ")
+        .replace(/\b(the|a|an)\b/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
 }
 
 function isCorrect(expectedAliases, prediction) {
     if (!prediction) return false;
-    const normalizedPrediction = normalizeText(prediction);
+
+    const normalizedPrediction = normalizeTriviaText(prediction);
+    if (!normalizedPrediction) return false;
 
     return expectedAliases.some(alias => {
-        const normalizedAlias = normalizeText(alias);
-        return normalizedPrediction === normalizedAlias ||
+        const normalizedAlias = normalizeTriviaText(alias);
+        return normalizedAlias && (
+            normalizedPrediction === normalizedAlias ||
             normalizedPrediction.includes(normalizedAlias) ||
-            normalizedAlias.includes(normalizedPrediction);
+            normalizedAlias.includes(normalizedPrediction)
+        );
     });
 }
 
@@ -111,9 +162,9 @@ async function main() {
 
         try {
             const result = await askModel(buildPrompt(item.Question), {
-                maxTokens: 32,
-                temperature: 0,
-                stop: ["\n", "\n\nQuestion:", "\nQuestion:", "\nAnswer:"],
+                maxTokens: TRIVIAQA_MAX_TOKENS,
+                temperature: TRIVIAQA_TEMPERATURE,
+                stop: ["\nQuestion:", "\n\nQuestion:"],
             });
             output = result.output;
             inferenceTimeMs = result.inferenceTimeMs;

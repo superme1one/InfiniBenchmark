@@ -7,11 +7,9 @@ const {
     buildSummaryPayload,
     createStatsTracker,
     ensureDir,
-    extractTail,
     formatMs,
     getDatasetPath,
     getGpuStats,
-    normalizeText,
     sleep,
     startGpuMonitor,
     updateStatsTracker,
@@ -43,6 +41,8 @@ const SUBJECT_FILTER = new Set(
         .filter(Boolean)
 );
 const RESULT_DIR = DEFAULT_CONFIG.resultDir;
+const MMLU_MAX_TOKENS = Number(process.env.MMLU_MAX_TOKENS || 4096);
+const MMLU_TEMPERATURE = Number(process.env.MMLU_TEMPERATURE || 0.1);
 
 function parseCsvRecords(text) {
     const rows = [];
@@ -118,62 +118,76 @@ function parseCsvRecords(text) {
 }
 
 function buildPrompt(item, subject) {
-    return [
-        "Answer the multiple-choice question by replying with exactly one capital letter.",
-        `Subject: ${subject.replace(/_/g, " ")}`,
-        "",
-        `Question: ${item.question}`,
-        `A. ${item.choices[0]}`,
-        `B. ${item.choices[1]}`,
-        `C. ${item.choices[2]}`,
-        `D. ${item.choices[3]}`,
-        "Answer:",
-    ].join("\n");
+    const subjectLabel = subject.replace(/_/g, " ");
+    return `
+You are an expert in ${subjectLabel}.
+
+Question:
+${item.question}
+A) ${item.choices[0]}
+B) ${item.choices[1]}
+C) ${item.choices[2]}
+D) ${item.choices[3]}
+
+Instructions:
+1. Think step by step to solve the problem.
+2. **Be concise.** Do NOT double-check your work once you derive an answer.
+3. You MUST end your response with exactly: "Answer: X" (where X is A, B, C, or D).
+4. Do NOT output anything after the final answer.
+
+Format Example:
+<think>
+... reasoning ...
+</think>
+Answer: A
+`.trim();
 }
 
-function extractChoice(output, choices = []) {
-    const tail = extractTail(output);
+function cleanModelOutput(rawOutput) {
+    if (!rawOutput) return "";
+
+    return String(rawOutput)
+        .replace(/\u0000/g, "")
+        .replace(/<\|im_end\|>/gi, "")
+        .replace(/<\|endoftext\|>/gi, "")
+        .trim();
+}
+
+function extractChoice(output) {
+    const cleaned = cleanModelOutput(output);
+    if (!cleaned) return "INVALID";
+
+    let cleanText = cleaned;
+    const thinkEndParts = cleaned.split("</think>");
+    if (thinkEndParts.length > 1) {
+        const tail = thinkEndParts[thinkEndParts.length - 1].trim();
+        cleanText = tail || cleaned;
+    } else if (cleaned.includes("<think>") && !cleaned.includes("</think>")) {
+        cleanText = cleaned;
+    }
+
     const patterns = [
-        /answer\s*[:=]?\s*([A-D])\b/i,
-        /(?:correct answer|final answer)\s*[:=]?\s*([A-D])\b/i,
-        /the answer is\s*([A-D])\b/i,
-        /\\boxed\{([A-D])\}/i,
-        /\boption\s*([A-D])\b/i,
-        /^\s*([A-D])(?:[\).:\s]|$)/i,
+        /Answer\s*:\s*([A-D])\b/i,
+        /The answer is\s*([A-D])\b/i,
+        /The correct option is\s*([A-D])\b/i,
+        /boxed\{([A-D])\}/i,
+        /^([A-D])$/m,
+        /Option\s*([A-D])\b/i,
     ];
 
     for (const pattern of patterns) {
-        const match = tail.match(pattern) || String(output || "").match(pattern);
-        if (match) return match[1].toUpperCase();
-    }
-
-    const lines = tail.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-    for (let i = lines.length - 1; i >= 0; i--) {
-        const match = lines[i].match(/^([A-D])(?:[\).:\s]|$)/i);
-        if (match) return match[1].toUpperCase();
-    }
-
-    const fallback = tail.match(/\b([A-D])\b(?!.*\b[A-D]\b)/i);
-    if (fallback) return fallback[1].toUpperCase();
-
-    const normalizedTail = normalizeText(tail);
-    if (normalizedTail && Array.isArray(choices) && choices.length === 4) {
-        const choiceMatches = choices
-            .map((choice, index) => ({
-                label: String.fromCharCode(65 + index),
-                normalized: normalizeText(choice),
-            }))
-            .filter(choice => choice.normalized);
-
-        const exact = choiceMatches.find(choice => choice.normalized === normalizedTail);
-        if (exact) return exact.label;
-
-        const prefixMatches = choiceMatches.filter(choice =>
-            choice.normalized.startsWith(normalizedTail) || normalizedTail.startsWith(choice.normalized)
-        );
-        if (prefixMatches.length === 1) {
-            return prefixMatches[0].label;
+        const match = cleanText.match(pattern);
+        if (match) {
+            return match[1].toUpperCase();
         }
+    }
+
+    const lastWindow = cleanText.slice(-100);
+    const loose = lastWindow.match(/(?:is|select|option)\s+([A-D])\W*$/i);
+    if (loose) return loose[1].toUpperCase();
+
+    if (cleaned.includes("<think>") && !cleaned.includes("</think>")) {
+        return "TRUNCATED";
     }
 
     return "INVALID";
@@ -251,9 +265,8 @@ async function main() {
 
             try {
                 const result = await askModel(buildPrompt(item, subject), {
-                    maxTokens: 6,
-                    temperature: 0,
-                    stop: ["\n", "\r", "Question:"],
+                    maxTokens: MMLU_MAX_TOKENS,
+                    temperature: MMLU_TEMPERATURE,
                 });
                 output = result.output;
                 inferenceTimeMs = result.inferenceTimeMs;
