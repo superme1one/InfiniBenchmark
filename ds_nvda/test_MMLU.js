@@ -133,7 +133,7 @@ function extractAnswer(str) {
 // 主流程
 async function main() {
     for (const tn of testName) {
-        const csv = fs.readFileSync(`./MMLU/${tn}_test.csv`, "utf-8");
+        const csv = fs.readFileSync(`./../data_sets/MMLU/${tn}_test.csv`, "utf-8");
         const lines = csv.split("\n").filter(l => l.trim().length);
         const resFile = `./result/mmlu_${tn}_res.jsonl`;
         fs.writeFileSync(resFile, "");
