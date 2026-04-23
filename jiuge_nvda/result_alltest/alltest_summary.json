@@ -86,28 +86,56 @@
   "DROP_V1": {
     "dataset": "DROP_V1",
     "status": "interrupted",
-    "startedAt": "2026-04-21T08:56:33.115Z",
-    "updatedAt": "2026-04-21T09:25:38.548Z",
+    "startedAt": "2026-04-23T01:00:49.584Z",
+    "updatedAt": "2026-04-23T01:00:52.443Z",
     "total": 77400,
-    "processed": 1504,
-    "correct": 724,
-    "accuracy": 48.14,
-    "avgInferenceTimeMs": 405.57,
-    "errors": 69,
-    "emptyResponses": 69,
+    "processed": 3,
+    "correct": 0,
+    "accuracy": 0,
+    "avgInferenceTimeMs": 0,
+    "errors": 3,
+    "emptyResponses": 0,
     "gpu": {
-      "gpuUtilization": 3,
+      "gpuUtilization": 0,
       "memoryTotalMB": 24576,
-      "memoryUsedMB": 8932,
-      "memoryFreeMB": 15395
+      "memoryUsedMB": 1847,
+      "memoryFreeMB": 22480
     },
     "avgGpu": {
-      "avgGpuUtilization": 44.76,
-      "avgMemoryUsedMB": 8885.47,
-      "avgMemoryFreeMB": 15441.53,
+      "avgGpuUtilization": 7,
+      "avgMemoryUsedMB": 1852.17,
+      "avgMemoryFreeMB": 22474.83,
+      "avgMemoryTotalMB": 24576,
+      "maxGpuUtilization": 11,
+      "samples": 6,
+      "mode": "continuous"
+    }
+  },
+  "DROP_PRO": {
+    "dataset": "DROP_PRO",
+    "status": "finished",
+    "startedAt": "2026-04-23T01:50:28.083Z",
+    "updatedAt": "2026-04-23T02:23:18.903Z",
+    "total": 500,
+    "processed": 500,
+    "correct": 260,
+    "accuracy": 52,
+    "avgInferenceTimeMs": 1769.55,
+    "errors": 0,
+    "emptyResponses": 0,
+    "gpu": {
+      "gpuUtilization": 15,
+      "memoryTotalMB": 24576,
+      "memoryUsedMB": 8671,
+      "memoryFreeMB": 15656
+    },
+    "avgGpu": {
+      "avgGpuUtilization": 40.36,
+      "avgMemoryUsedMB": 8654.3,
+      "avgMemoryFreeMB": 15672.7,
       "avgMemoryTotalMB": 24576,
       "maxGpuUtilization": 100,
-      "samples": 3443,
+      "samples": 3888,
       "mode": "continuous"
     }
   }
